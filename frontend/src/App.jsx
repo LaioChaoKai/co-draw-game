@@ -1,0 +1,259 @@
+import React, { useState, useEffect, useRef } from 'react';
+import io from 'socket.io-client';
+import confetti from 'canvas-confetti';
+import { Palette, Copy, LogOut, Heart } from 'lucide-react';
+import Lobby from './components/Lobby';
+import Board from './components/Board';
+import GameStatus from './components/GameStatus';
+import Chat from './components/Chat';
+import SOCKET_URL from './api';
+
+function App() {
+  const [joined, setJoined] = useState(false);
+  const [roomInfo, setRoomInfo] = useState({ roomId: '', username: '' });
+  const [users, setUsers] = useState([]);
+  const [gameStatus, setGameStatus] = useState('LOBBY'); // 'LOBBY', 'PLAYING', 'ROUND_END'
+  const [drawerId, setDrawerId] = useState(null);
+  const [drawerName, setDrawerName] = useState('');
+  const [category, setCategory] = useState('');
+  const [word, setWord] = useState('');
+  const [timer, setTimer] = useState(0);
+  const [guessedUsers, setGuessedUsers] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [copyText, setCopyText] = useState('複製房號');
+
+  const socketRef = useRef(null);
+
+  // Clean up socket on unmount
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  const handleJoin = ({ roomId, username }) => {
+    setRoomInfo({ roomId, username });
+    
+    // Connect to WebSocket server
+    socketRef.current = io(SOCKET_URL);
+
+    // Join room
+    socketRef.current.emit('join_room', { roomId, username });
+    setJoined(true);
+
+    // Setup event listeners
+    socketRef.current.on('room_data', (data) => {
+      setUsers(data.users);
+      setGameStatus(data.gameStatus);
+      setDrawerId(data.drawerId);
+      setCategory(data.category);
+      setTimer(data.timer);
+      setGuessedUsers(data.guessedUsers || []);
+      
+      const drawer = data.users.find(u => u.id === data.drawerId);
+      if (drawer) {
+        setDrawerName(drawer.username);
+      }
+    });
+
+    socketRef.current.on('round_started', (data) => {
+      setGameStatus('PLAYING');
+      setDrawerId(data.drawerId);
+      setDrawerName(data.drawerName);
+      setCategory(data.category);
+      setTimer(data.timer);
+      setUsers(data.users);
+      setWord(''); // Clear old word for guessers
+      setGuessedUsers([]);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: `🎨 新回合開始！現在輪到 ${data.drawerName} 作畫。`
+      }]);
+    });
+
+    socketRef.current.on('secret_word', (data) => {
+      setWord(data.word);
+    });
+
+    socketRef.current.on('timer_update', (data) => {
+      setTimer(data.timer);
+    });
+
+    socketRef.current.on('correct_guess', (data) => {
+      setUsers(data.users);
+      setGuessedUsers(prev => [...prev, data.userId]);
+
+      // If the current user guessed correctly, trigger confetti!
+      if (data.userId === socketRef.current.id) {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+    });
+
+    socketRef.current.on('round_ended', (data) => {
+      setGameStatus('ROUND_END');
+      setWord(data.word);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: `⏰ 回合結束！正確答案是：【${data.word}】。`
+      }]);
+    });
+
+    socketRef.current.on('chat_message', (msg) => {
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        sender: msg.username,
+        text: msg.text,
+        isSelf: msg.userId === socketRef.current.id
+      }]);
+    });
+
+    socketRef.current.on('system_message', (msg) => {
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: msg.text
+      }]);
+    });
+
+    socketRef.current.on('game_reset_lobby', (data) => {
+      setGameStatus('LOBBY');
+      setDrawerId(null);
+      setDrawerName('');
+      setCategory('');
+      setWord('');
+      setTimer(0);
+      setGuessedUsers([]);
+      setUsers(data.users);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: `⚠️ ${data.message}`
+      }]);
+    });
+
+    socketRef.current.on('user_left', (data) => {
+      setUsers(data.users);
+    });
+  };
+
+  const handleSendMessage = (text) => {
+    if (socketRef.current) {
+      socketRef.current.emit('chat_message', text);
+    }
+  };
+
+  const handleLeave = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+    setJoined(false);
+    setRoomInfo({ roomId: '', username: '' });
+    setUsers([]);
+    setGameStatus('LOBBY');
+    setDrawerId(null);
+    setDrawerName('');
+    setCategory('');
+    setWord('');
+    setTimer(0);
+    setGuessedUsers([]);
+    setMessages([]);
+  };
+
+  const copyRoomId = () => {
+    navigator.clipboard.writeText(roomInfo.roomId);
+    setCopyText('已複製！');
+    setTimeout(() => {
+      setCopyText('複製房號');
+    }, 2000);
+  };
+
+  const isDrawer = socketRef.current && socketRef.current.id === drawerId;
+  const hasGuessed = socketRef.current && guessedUsers.includes(socketRef.current.id);
+
+  return (
+    <div className="app-container">
+      {/* Dynamic logo color gradient */}
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#10b981" />
+          <stop offset="100%" stopColor="#3b82f6" />
+        </linearGradient>
+      </svg>
+
+      <header className="app-header">
+        <div className="app-logo">
+          <Palette size={28} />
+          <span>CoDraw</span>
+        </div>
+
+        {joined && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <button className="room-badge" onClick={copyRoomId} style={{ cursor: 'pointer', background: 'rgba(16, 185, 129, 0.1)' }}>
+              <span>房號: {roomInfo.roomId}</span>
+              <Copy size={14} />
+              <span style={{ fontSize: '0.75rem', opacity: 0.8, marginLeft: '0.2rem' }}>({copyText})</span>
+            </button>
+            <button className="btn btn-outline" onClick={handleLeave} style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
+              <LogOut size={14} /> 離開房間
+            </button>
+          </div>
+        )}
+      </header>
+
+      {joined ? (
+        <div className="workspace">
+          {/* Main draw area (scores & whiteboard) */}
+          <div className="main-area">
+            <GameStatus
+              users={users}
+              gameStatus={gameStatus}
+              drawerId={drawerId}
+              category={category}
+              word={word}
+              timer={timer}
+              socket={socketRef.current}
+              currentUserSocketId={socketRef.current ? socketRef.current.id : null}
+            />
+            <Board
+              socket={socketRef.current}
+              isDrawer={isDrawer}
+              gameStatus={gameStatus}
+              drawerName={drawerName}
+            />
+          </div>
+
+          {/* Right sidebar area (chat and guessing log) */}
+          <div className="side-area">
+            <Chat
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isDrawer={isDrawer}
+              hasGuessed={hasGuessed}
+              gameStatus={gameStatus}
+            />
+          </div>
+        </div>
+      ) : (
+        <Lobby onJoin={handleJoin} />
+      )}
+
+      <footer style={{ textAlign: 'center', padding: '1.5rem', fontSize: '0.85rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border-glass)', background: 'rgba(11, 15, 25, 0.5)' }}>
+        Made with <Heart size={12} style={{ color: '#ef4444', display: 'inline', fill: '#ef4444' }} /> for Git & Docker School Project | CoDraw © 2026
+      </footer>
+    </div>
+  );
+}
+
+export default App;
