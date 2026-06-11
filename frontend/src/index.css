@@ -303,6 +303,7 @@ h1, h2, h3, h4 {
   flex: 1;
   height: calc(100vh - 76px);
   min-height: 0; /* Important for flex-child scrolling */
+  position: relative;
 }
 
 @media (max-width: 1024px) {
@@ -520,6 +521,13 @@ h1, h2, h3, h4 {
   font-weight: 500;
 }
 
+.chat-bubble-ai {
+  background: rgba(139, 92, 246, 0.08);
+  border-color: rgba(139, 92, 246, 0.18);
+  color: #a78bfa;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.05);
+}
+
 .chat-message-sender {
   font-weight: 600;
   margin-right: 0.5rem;
@@ -607,4 +615,169 @@ h1, h2, h3, h4 {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Game Over and Selection overlays */
+.game-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(11, 15, 25, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.overlay-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(16, 185, 129, 0.1);
+  padding: 2.5rem;
+  width: 90%;
+  max-width: 500px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.overlay-desc {
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.word-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+.word-option-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  color: var(--text-main);
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.word-option-btn:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(59, 130, 246, 0.15) 100%);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+  transform: translateY(-2px);
+}
+
+.word-category {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.overlay-timer {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Leaderboard */
+.leaderboard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  text-align: left;
+}
+
+.leaderboard-item {
+  display: flex;
+  align-items: center;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass);
+  font-weight: 600;
+}
+
+.rank-num {
+  font-size: 1.1rem;
+  font-weight: 800;
+  width: 40px;
+}
+
+.rank-name {
+  flex: 1;
+}
+
+.rank-score {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* Ranks colors */
+.rank-1 {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15) 0%, rgba(251, 191, 36, 0.05) 100%);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+.rank-1 .rank-num {
+  color: #f59e0b;
+}
+
+.rank-2 {
+  background: linear-gradient(90deg, rgba(156, 163, 175, 0.15) 0%, rgba(209, 213, 219, 0.05) 100%);
+  border-color: rgba(156, 163, 175, 0.4);
+}
+.rank-2 .rank-num {
+  color: #d1d5db;
+}
+
+.rank-3 {
+  background: linear-gradient(90deg, rgba(180, 83, 9, 0.15) 0%, rgba(217, 119, 6, 0.05) 100%);
+  border-color: rgba(180, 83, 9, 0.4);
+}
+.rank-3 .rank-num {
+  color: #b45309;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(16, 185, 129, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--primary);
+  align-self: center;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }

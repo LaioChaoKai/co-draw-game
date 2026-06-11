@@ -11,8 +11,7 @@ const COLORS = [
   '#8b5cf6'  // Purple
 ];
 
-function Board({ socket, isDrawer, gameStatus, drawerName }) {
-  const canvasRef = useRef(null);
+function Board({ socket, isDrawer, gameStatus, drawerName, canvasRef }) {
   const containerRef = useRef(null);
   const [color, setColor] = useState('#000000');
   const [size, setSize] = useState(5);

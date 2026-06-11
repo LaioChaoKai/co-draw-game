@@ -35,12 +35,18 @@ out/
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables - protect secret keys
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+# NOTE: .env.production is intentionally NOT ignored (contains only public backend URL)
 
 # Docker local data
 .docker-data/
+
+# Temp files
+新增 文字文件.txt
+backend/test_key.js
+test_key.js

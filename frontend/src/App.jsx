@@ -7,22 +7,39 @@ import Board from './components/Board';
 import GameStatus from './components/GameStatus';
 import Chat from './components/Chat';
 import SOCKET_URL from './api';
+import {
+  playCorrectGuess,
+  playChatMessage,
+  playRoundEnd,
+  playGameOver,
+  playTimerTick,
+  playAiBlip,
+  playRoundStart,
+  playError
+} from './utils/sounds';
 
 function App() {
   const [joined, setJoined] = useState(false);
   const [roomInfo, setRoomInfo] = useState({ roomId: '', username: '' });
   const [users, setUsers] = useState([]);
-  const [gameStatus, setGameStatus] = useState('LOBBY'); // 'LOBBY', 'PLAYING', 'ROUND_END'
+  const [gameStatus, setGameStatus] = useState('LOBBY'); // 'LOBBY', 'SELECTING_WORD', 'PLAYING', 'ROUND_END', 'GAME_OVER'
   const [drawerId, setDrawerId] = useState(null);
   const [drawerName, setDrawerName] = useState('');
   const [category, setCategory] = useState('');
   const [word, setWord] = useState('');
+  const [wordLength, setWordLength] = useState(0);
   const [timer, setTimer] = useState(0);
   const [guessedUsers, setGuessedUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [copyText, setCopyText] = useState('複製房號');
+  const [wordOptions, setWordOptions] = useState([]);
+  const [round, setRound] = useState(0);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [geminiKey, setGeminiKey] = useState(''); // Player's own Gemini API key
 
   const socketRef = useRef(null);
+  const canvasRef = useRef(null);
+  const prevTimerRef = useRef(null); // for timer tick detection
 
   // Clean up socket on unmount
   useEffect(() => {
@@ -33,7 +50,8 @@ function App() {
     };
   }, []);
 
-  const handleJoin = ({ roomId, username }) => {
+  const handleJoin = ({ roomId, username, geminiKey: key = '' }) => {
+    setGeminiKey(key);
     setRoomInfo({ roomId, username });
     
     // Connect to WebSocket server
@@ -58,6 +76,20 @@ function App() {
       }
     });
 
+    socketRef.current.on('round_selecting', (data) => {
+      setGameStatus('SELECTING_WORD');
+      setDrawerId(data.drawerId);
+      setDrawerName(data.drawerName);
+      setTimer(data.timer);
+      setUsers(data.users);
+      setWord('');
+      setRound(data.round);
+    });
+
+    socketRef.current.on('word_options', (data) => {
+      setWordOptions(data.options);
+    });
+
     socketRef.current.on('round_started', (data) => {
       setGameStatus('PLAYING');
       setDrawerId(data.drawerId);
@@ -66,6 +98,8 @@ function App() {
       setTimer(data.timer);
       setUsers(data.users);
       setWord(''); // Clear old word for guessers
+      setWordLength(data.wordLength || 0); // Set word length for guessers
+      setWordOptions([]); // Clear options once playing starts
       setGuessedUsers([]);
       
       setMessages(prev => [...prev, {
@@ -77,15 +111,22 @@ function App() {
 
     socketRef.current.on('secret_word', (data) => {
       setWord(data.word);
+      setWordLength(data.word.length);
     });
 
     socketRef.current.on('timer_update', (data) => {
       setTimer(data.timer);
+      // Play tick in final 10 seconds (only once per tick, not when paused)
+      if (data.timer <= 10 && data.timer > 0 && data.timer !== prevTimerRef.current) {
+        playTimerTick();
+      }
+      prevTimerRef.current = data.timer;
     });
 
     socketRef.current.on('correct_guess', (data) => {
       setUsers(data.users);
       setGuessedUsers(prev => [...prev, data.userId]);
+      playCorrectGuess();
 
       // If the current user guessed correctly, trigger confetti!
       if (data.userId === socketRef.current.id) {
@@ -109,6 +150,7 @@ function App() {
     });
 
     socketRef.current.on('chat_message', (msg) => {
+      playChatMessage();
       setMessages(prev => [...prev, {
         id: Date.now() + Math.random(),
         sender: msg.username,
@@ -142,14 +184,97 @@ function App() {
       }]);
     });
 
+    socketRef.current.on('game_over', (data) => {
+      setGameStatus('GAME_OVER');
+      setUsers(data.users);
+      setLeaderboard(data.leaderboard || []);
+      
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: `🚩 遊戲結束！第一名是：【${data.leaderboard?.[0]?.username || '無'}】！`
+      }]);
+
+      confetti({
+        particleCount: 150,
+        spread: 80,
+        origin: { y: 0.5 }
+      });
+    });
+
     socketRef.current.on('user_left', (data) => {
       setUsers(data.users);
+    });
+
+    socketRef.current.on('ai_thinking', (data) => {
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        isAiThinking: true,
+        text: `🤖 ${data.username} 正在向 AI 助手提問：『${data.question}』... (AI 思考中)`
+      }]);
+    });
+
+    socketRef.current.on('ai_response', (data) => {
+      playAiBlip();
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !(msg.isAiThinking && msg.text.includes(data.username)));
+        return [...filtered, {
+          id: Date.now() + Math.random(),
+          isAi: true,
+          sender: `${data.username} 的問答`,
+          text: `🤖 AI 回覆：${data.answer}`
+        }];
+      });
+    });
+
+    socketRef.current.on('ai_private_done', (data) => {
+      setMessages(prev => {
+        const filtered = prev.filter(msg => !(msg.isAiThinking && msg.text.includes(data.username)));
+        return [...filtered, {
+          id: Date.now() + Math.random(),
+          isSystem: true,
+          text: `🤫 AI 已私下給予了 ${data.username} 提示。`
+        }];
+      });
     });
   };
 
   const handleSendMessage = (text) => {
     if (socketRef.current) {
       socketRef.current.emit('chat_message', text);
+    }
+  };
+
+  const handleSelectClass = (difficultyClass) => {
+    if (socketRef.current) {
+      socketRef.current.emit('select_class', { difficultyClass });
+    }
+  };
+
+  const handleSelectWord = (selectedWord) => {
+    if (socketRef.current) {
+      socketRef.current.emit('select_word', { word: selectedWord });
+    }
+  };
+
+  const handleSendAiQuestion = (text) => {
+    if (!socketRef.current || !canvasRef.current) return;
+
+    try {
+      const dataUrl = canvasRef.current.toDataURL('image/png');
+      socketRef.current.emit('ask_ai', {
+        question: text,
+        image: dataUrl,
+        geminiKey: geminiKey // pass player's own key to the backend
+      });
+    } catch (err) {
+      console.error("Failed to capture canvas image:", err);
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        isSystem: true,
+        text: "❌ 無法擷取畫布，可能畫布尚未載入。"
+      }]);
     }
   };
 
@@ -179,6 +304,7 @@ function App() {
     }, 2000);
   };
 
+  const currentUser = users.find(u => u.id === (socketRef.current ? socketRef.current.id : null));
   const isDrawer = socketRef.current && socketRef.current.id === drawerId;
   const hasGuessed = socketRef.current && guessedUsers.includes(socketRef.current.id);
 
@@ -222,6 +348,7 @@ function App() {
               drawerId={drawerId}
               category={category}
               word={word}
+              wordLength={wordLength}
               timer={timer}
               socket={socketRef.current}
               currentUserSocketId={socketRef.current ? socketRef.current.id : null}
@@ -231,6 +358,7 @@ function App() {
               isDrawer={isDrawer}
               gameStatus={gameStatus}
               drawerName={drawerName}
+              canvasRef={canvasRef}
             />
           </div>
 
@@ -239,11 +367,93 @@ function App() {
             <Chat
               messages={messages}
               onSendMessage={handleSendMessage}
+              onSendAiQuestion={handleSendAiQuestion}
               isDrawer={isDrawer}
               hasGuessed={hasGuessed}
               gameStatus={gameStatus}
+              hasAskedAi={currentUser?.hasAskedAi}
+              guessesLeftAfterAi={currentUser?.guessesLeftAfterAi}
+              hasGeminiKey={!!geminiKey}
             />
+
           </div>
+
+          {gameStatus === 'SELECTING_WORD' && (
+            <div className="game-overlay">
+              <div className="overlay-card" style={{ maxWidth: '550px', width: '90%' }}>
+                <h3 style={{ fontSize: '1.4rem', color: '#ffffff', margin: 0 }}>🎨 回合 {round}：選擇一個題目來畫</h3>
+                {isDrawer ? (
+                  wordOptions.length === 0 ? (
+                    <>
+                      <p className="overlay-desc">請先選擇題目難度（班級）：</p>
+                      <div className="word-options-container" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
+                        <button className="word-option-btn" onClick={() => handleSelectClass('baby')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0.85rem 1.25rem' }}>
+                          <span style={{ fontWeight: 600 }}>👶 幼幼2字班</span>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(猜對: 猜題+100 / 畫家+50)</span>
+                        </button>
+                        <button className="word-option-btn" onClick={() => handleSelectClass('advanced')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0.85rem 1.25rem' }}>
+                          <span style={{ fontWeight: 600 }}>🚀 進階3字班</span>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(猜對: 猜題+100 / 畫家+100)</span>
+                        </button>
+                        <button className="word-option-btn" onClick={() => handleSelectClass('idiom')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0.85rem 1.25rem' }}>
+                          <span style={{ fontWeight: 600 }}>📚 成語4字班</span>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(猜對: 猜題+100 / 畫家+150)</span>
+                        </button>
+                        <button className="word-option-btn" onClick={() => handleSelectClass('meme')} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0.85rem 1.25rem' }}>
+                          <span style={{ fontWeight: 600 }}>🤡 迷因班</span>
+                          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(猜對: 雙方皆得 +200)</span>
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="overlay-desc">請從該難度中點選一個題目：</p>
+                      <div className="word-options-container" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.75rem', width: '100%' }}>
+                        {wordOptions.map((opt, i) => (
+                          <button
+                            key={opt.word || i}
+                            className="word-option-btn"
+                            onClick={() => handleSelectWord(opt.word)}
+                            style={{ padding: '1rem' }}
+                          >
+                            <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>{opt.word}</span>
+                            <span className="word-category" style={{ fontSize: '0.8rem', opacity: 0.7, marginLeft: '0.5rem' }}>
+                              ({opt.category === 'baby' ? '幼幼2字班' : opt.category === 'advanced' ? '進階3字班' : opt.category === 'idiom' ? '成語4字班' : '迷因班'})
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <div className="loading-spinner"></div>
+                    <p className="overlay-desc">正在等待畫家 <strong>{drawerName}</strong> 選詞...</p>
+                  </>
+                )}
+                <div className="overlay-timer" style={{ marginTop: '1rem' }}>⏰ 剩餘選擇時間：{timer} 秒</div>
+              </div>
+            </div>
+          )}
+
+          {gameStatus === 'GAME_OVER' && (
+            <div className="game-overlay">
+              <div className="overlay-card">
+                <h2 style={{ fontSize: '1.6rem', color: '#f59e0b', margin: 0 }}>🏆 遊戲結束！</h2>
+                <h3 style={{ fontSize: '1.2rem', margin: 0 }}>第一名：{leaderboard[0]?.username || '無'} 👑</h3>
+                <p className="overlay-desc">倒數 10 秒後自動回到遊戲大廳...</p>
+                <div className="leaderboard-container">
+                  {leaderboard.slice(0, 5).map((player, idx) => (
+                    <div key={player.id || idx} className={`leaderboard-item rank-${idx + 1}`}>
+                      <span className="rank-num">#{idx + 1}</span>
+                      <span className="rank-name">{player.username} {socketRef.current?.id === player.id ? ' (你)' : ''}</span>
+                      <span className="rank-score">{player.score} 分</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <Lobby onJoin={handleJoin} />

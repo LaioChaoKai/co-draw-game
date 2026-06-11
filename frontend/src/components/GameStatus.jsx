@@ -1,7 +1,7 @@
 import React from 'react';
 import { Timer, Trophy, Play, Info, Sparkles } from 'lucide-react';
 
-function GameStatus({ users, gameStatus, drawerId, category, word, timer, socket, currentUserSocketId }) {
+function GameStatus({ users, gameStatus, drawerId, category, word, wordLength, timer, socket, currentUserSocketId }) {
   const isDrawer = currentUserSocketId === drawerId;
   
   // Sort users by score descending
@@ -66,7 +66,7 @@ function GameStatus({ users, gameStatus, drawerId, category, word, timer, socket
                 ) : isDrawer ? (
                   <span style={{ color: 'var(--primary)' }}>繪製: {word}</span>
                 ) : (
-                  <span>猜我！({word ? word.length : 0} 個字)</span>
+                  <span>猜我({wordLength || 0}個字)</span>
                 )}
               </span>
             </div>
