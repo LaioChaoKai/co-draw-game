@@ -12,3 +12,14 @@ services:
         generateValue: false
         value: 10000
     plan: free
+
+  - type: web
+    name: co-draw-game-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_SOCKET_URL
+        value: https://co-draw-game-backend.onrender.com
+    plan: free
