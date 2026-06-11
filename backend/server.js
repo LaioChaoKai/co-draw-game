@@ -38,26 +38,43 @@ try {
   console.error('Failed to load words.json, using fallback words:', err);
 }
 
-// Redis Integration
-const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
+// Redis Integration (with reconnect limit so Render free tier doesn't hang)
+const REDIS_URL = process.env.REDIS_URL || null;
 let redisClient = null;
 let subClient = null;
 
-try {
-  redisClient = createClient({ url: REDIS_URL });
-  subClient = redisClient.duplicate();
-  
-  redisClient.on('error', (err) => console.log('Redis Client Error', err));
-  subClient.on('error', (err) => console.log('Redis Sub Client Error', err));
+if (REDIS_URL) {
+  try {
+    const socketOptions = {
+      reconnectStrategy: (retries) => {
+        if (retries > 2) {
+          return new Error('Redis connection failed after 3 retries');
+        }
+        return 1000; // wait 1s between retries
+      },
+      connectTimeout: 5000
+    };
 
-  await redisClient.connect();
-  await subClient.connect();
-  
-  io.adapter(createAdapter(redisClient, subClient));
-  console.log('Redis Adapter integrated successfully.');
-} catch (err) {
-  console.log('Redis not available, falling back to local memory adapter.');
+    redisClient = createClient({ url: REDIS_URL, socket: socketOptions });
+    subClient = redisClient.duplicate();
+    
+    redisClient.on('error', (err) => console.log('Redis Client Error', err));
+    subClient.on('error', (err) => console.log('Redis Sub Client Error', err));
+
+    await redisClient.connect();
+    await subClient.connect();
+    
+    io.adapter(createAdapter(redisClient, subClient));
+    console.log('Redis Adapter integrated successfully.');
+  } catch (err) {
+    console.log('Redis not available, falling back to local memory adapter:', err.message);
+    redisClient = null;
+    subClient = null;
+  }
+} else {
+  console.log('No REDIS_URL set, using local memory adapter (single-server mode).');
 }
+
 
 // Local Room State Store
 const rooms = {};
