@@ -1,0 +1,6 @@
+cd C:\Users\chaok\Desktop\SCHOOl\building-monitor-system\co-draw-game
+docker compose -f docker-compose.dev.yml up -d --build
+
+git add .
+git commit -m "更新了某些功能"
+git push origin master
